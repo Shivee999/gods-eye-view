@@ -124,8 +124,9 @@ async function main() {
   }
   mkdirSync(dirname(opts.out), { recursive: true });
 
-  // --preview renders the 1920x1080 layout at half scale so the HUD matches the final cut.
-  const scale = opts.scale || 1;
+  // The HUD is laid out for a 1920px-long edge; other sizes render that layout at a
+  // different pixel density (0.5 for --preview, 2 for 4K) so text and map detail scale together.
+  const scale = opts.scale || Math.max(opts.width, opts.height) / 1920;
   const viewport = { width: Math.round(opts.width / scale), height: Math.round(opts.height / scale) };
 
   const { chromium } = loadPlaywright();
@@ -158,7 +159,7 @@ async function main() {
   const started = Date.now();
   for (let f = 0; f < frames; f++) {
     await page.evaluate((t) => window.renderFrame(t), t0 + f / opts.renderFps);
-    const jpg = await page.screenshot({ type: 'jpeg', quality: 95 });
+    const jpg = await page.screenshot({ type: 'jpeg', quality: 95, timeout: 0 });
     if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once('drain', r));
     if (f % opts.renderFps === 0 || f === frames - 1) {
       const rate = (f + 1) / ((Date.now() - started) / 1000);
