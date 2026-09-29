@@ -1,0 +1,24 @@
+{
+  "title": "100 Days On The Road",
+  "subtitle": "India · Jun – Sep 2026",
+  "start": "2026-06-21",
+  "end": "2026-09-28",
+  "stops": [
+    { "name": "New Delhi",   "region": "Delhi",          "lat": 28.6139, "lon": 77.2090, "arrive": "2026-06-21" },
+    { "name": "Rishikesh",   "region": "Uttarakhand",    "lat": 30.0869, "lon": 78.2676, "arrive": "2026-06-24", "mode": "road" },
+    { "name": "Manali",      "region": "Himachal",       "lat": 32.2432, "lon": 77.1892, "arrive": "2026-07-01", "mode": "road" },
+    { "name": "Leh",         "region": "Ladakh",         "lat": 34.1526, "lon": 77.5771, "arrive": "2026-07-09", "mode": "road" },
+    { "name": "Amritsar",    "region": "Punjab",         "lat": 31.6340, "lon": 74.8723, "arrive": "2026-07-18", "mode": "flight" },
+    { "name": "Jaipur",      "region": "Rajasthan",      "lat": 26.9124, "lon": 75.7873, "arrive": "2026-07-24", "mode": "train" },
+    { "name": "Udaipur",     "region": "Rajasthan",      "lat": 24.5854, "lon": 73.7125, "arrive": "2026-07-31", "mode": "road" },
+    { "name": "Mumbai",      "region": "Maharashtra",    "lat": 19.0760, "lon": 72.8777, "arrive": "2026-08-07", "mode": "flight" },
+    { "name": "Goa",         "region": "Goa",            "lat": 15.4909, "lon": 73.8278, "arrive": "2026-08-15", "mode": "train" },
+    { "name": "Hampi",       "region": "Karnataka",      "lat": 15.3350, "lon": 76.4600, "arrive": "2026-08-24", "mode": "road" },
+    { "name": "Bengaluru",   "region": "Karnataka",      "lat": 12.9716, "lon": 77.5946, "arrive": "2026-08-30", "mode": "road" },
+    { "name": "Kochi",       "region": "Kerala",         "lat": 9.9312,  "lon": 76.2673, "arrive": "2026-09-05", "mode": "flight" },
+    { "name": "Varkala",     "region": "Kerala",         "lat": 8.7379,  "lon": 76.7163, "arrive": "2026-09-12", "mode": "road" },
+    { "name": "Pondicherry", "region": "Puducherry",     "lat": 11.9416, "lon": 79.8083, "arrive": "2026-09-17", "mode": "train" },
+    { "name": "Kolkata",     "region": "West Bengal",    "lat": 22.5726, "lon": 88.3639, "arrive": "2026-09-22", "mode": "flight" },
+    { "name": "Darjeeling",  "region": "West Bengal",    "lat": 27.0410, "lon": 88.2663, "arrive": "2026-09-25", "mode": "road" }
+  ]
+}
