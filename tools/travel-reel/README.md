@@ -30,6 +30,7 @@ node tools/travel-reel/from-timeline.mjs --in Timeline.json --days 100 --geocode
 node tools/travel-reel/render.mjs --trip my-trip.json --preview                 # quick low-fps draft
 node tools/travel-reel/render.mjs --trip my-trip.json                           # 1920x1080 MP4
 node tools/travel-reel/render.mjs --trip my-trip.json --vertical --out output/reel-9x16.mp4   # Reels / Shorts / TikTok
+node tools/travel-reel/render.mjs --trip my-trip.json --mode overview                          # one 3D terrain shot of the whole route
 ```
 
 The video lands in `output/`. Tiles are cached in `output/.tile-cache`, so the second render of the same trip is much faster.

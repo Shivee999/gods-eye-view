@@ -13,6 +13,7 @@
  *
  * Options:
  *   --trip      Trip JSON (see trip.sample.json)          (default: trip.sample.json)
+ *   --mode      "tour" (fly stop to stop) or "overview" (one 3D shot of the whole route with terrain)
  *   --out       Output .mp4                               (default: output/travel-reel.mp4)
  *   --fps       Frames per second                         (default: 30)
  *   --width     Frame width                               (default: 1920)
@@ -47,6 +48,7 @@ function parseArgs() {
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--trip':     opts.trip = resolve(args[++i]); break;
+      case '--mode':     opts.mode = args[++i]; break;
       case '--out':      opts.out = resolve(args[++i]); break;
       case '--fps':      opts.fps = parseInt(args[++i], 10); break;
       case '--render-fps': opts.renderFps = parseInt(args[++i], 10); break;
@@ -135,7 +137,7 @@ async function main() {
   await routeThroughNode(page, resolve(dirname(opts.out), '.tile-cache'));
   await page.goto(pathToFileURL(resolve(__dirname, 'reel.html')).href);
   await page.waitForFunction(() => typeof maplibregl !== 'undefined');
-  const duration = await page.evaluate((t) => window.setupReel(t), trip);
+  const duration = await page.evaluate(([t, o]) => window.setupReel(t, o), [trip, { mode: opts.mode || 'tour' }]);
 
   const t0 = opts.from ?? 0;
   const t1 = Math.min(opts.to ?? duration, duration);
