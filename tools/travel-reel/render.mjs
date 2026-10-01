@@ -23,11 +23,13 @@
  *   --fast      1280x720, 12 fps rendered, interpolated to 30 fps (for machines without a GPU)
  *   --from/--to Render only this time window, in seconds
  *   --ffmpeg    Path to ffmpeg                            (default: $FFMPEG or "ffmpeg")
+ *   --frames-dir Save frames as JPEGs here and skip ones that already exist, so an
+ *               interrupted render resumes instead of starting over
  *
  * Dependencies: playwright (or a global install), ffmpeg
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -60,6 +62,7 @@ function parseArgs() {
       case '--from':     opts.from = parseFloat(args[++i]); break;
       case '--to':       opts.to = parseFloat(args[++i]); break;
       case '--ffmpeg':   opts.ffmpeg = args[++i]; break;
+      case '--frames-dir': opts.framesDir = resolve(args[++i]); break;
       default:
         console.error(`Unknown option: ${args[i]}`);
         process.exit(1);
@@ -148,27 +151,42 @@ async function main() {
     ? ['-vf', `minterpolate=fps=${opts.fps}:mi_mode=mci:mc_mode=aobmc:me_mode=bidir:vsbmc=1`]
     : [];
 
-  const ff = spawn(opts.ffmpeg, [
-    '-y', '-loglevel', 'error',
-    '-f', 'image2pipe', '-framerate', String(opts.renderFps), '-c:v', 'mjpeg', '-i', '-',
-    ...filters, '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p',
-    '-movflags', '+faststart', opts.out,
-  ], { stdio: ['pipe', 'inherit', 'inherit'] });
-  const ffDone = new Promise((res, rej) => ff.on('close', (code) => (code === 0 ? res() : rej(new Error(`ffmpeg exited ${code}`)))));
+  const encodeArgs = [...filters, '-c:v', 'libx264', '-preset', 'slow', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', opts.out];
+  const runFfmpeg = (inputArgs, stdin) => new Promise((res, rej) => {
+    const ff = spawn(opts.ffmpeg, ['-y', '-loglevel', 'error', ...inputArgs, ...encodeArgs], { stdio: [stdin, 'inherit', 'inherit'] });
+    ff.on('close', (code) => (code === 0 ? res() : rej(new Error(`ffmpeg exited ${code}`))));
+    if (stdin === 'pipe') res(ff);
+  });
+  let ff, ffDone;
+  if (opts.framesDir) {
+    mkdirSync(opts.framesDir, { recursive: true });
+  } else {
+    ff = await runFfmpeg(['-f', 'image2pipe', '-framerate', String(opts.renderFps), '-c:v', 'mjpeg', '-i', '-'], 'pipe');
+    ffDone = new Promise((res, rej) => ff.on('close', (code) => (code === 0 ? res() : rej(new Error(`ffmpeg exited ${code}`)))));
+  }
 
   const started = Date.now();
   for (let f = 0; f < frames; f++) {
+    const framePath = opts.framesDir && resolve(opts.framesDir, `f${String(f).padStart(5, '0')}.jpg`);
+    if (framePath && existsSync(framePath)) continue;
     await page.evaluate((t) => window.renderFrame(t), t0 + f / opts.renderFps);
     const jpg = await page.screenshot({ type: 'jpeg', quality: 95, timeout: 0 });
-    if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once('drain', r));
+    if (framePath) {
+      writeFileSync(framePath + '.part', jpg);
+      renameSync(framePath + '.part', framePath);
+    } else if (!ff.stdin.write(jpg)) await new Promise((r) => ff.stdin.once('drain', r));
     if (f % opts.renderFps === 0 || f === frames - 1) {
       const rate = (f + 1) / ((Date.now() - started) / 1000);
       process.stdout.write(`\r  frame ${f + 1}/${frames}  ${rate.toFixed(1)} fps  eta ${Math.round((frames - f - 1) / rate)}s   `);
     }
   }
-  ff.stdin.end();
-  await ffDone;
   await browser.close();
+  if (opts.framesDir) {
+    await runFfmpeg(['-framerate', String(opts.renderFps), '-i', resolve(opts.framesDir, 'f%05d.jpg')], 'ignore');
+  } else {
+    ff.stdin.end();
+    await ffDone;
+  }
   console.log(`\nWrote ${opts.out}`);
 }
 
