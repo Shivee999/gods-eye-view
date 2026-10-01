@@ -1,0 +1,490 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Travel Reel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;500;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>
+<style>
+  :root {
+    --accent: #00d4ff;
+    --accent-dim: rgba(0, 212, 255, 0.15);
+    --warm: #ffb547;
+    --text: #e8eaed;
+    --text-2: rgba(232, 234, 237, 0.6);
+    --glass: rgba(10, 12, 20, 0.55);
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Inter', sans-serif;
+  }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #map { position: absolute; inset: 0; }
+  .maplibregl-ctrl-attrib, .maplibregl-ctrl-logo { display: none !important; }
+
+  /* cinematic overlays */
+  #vignette { position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%); }
+  #scan { position: absolute; inset: 0; pointer-events: none; opacity: 0.05;
+    background: repeating-linear-gradient(0deg, #fff 0 1px, transparent 1px 3px); }
+
+  .hud { position: absolute; font-family: var(--mono); color: var(--text); letter-spacing: 0.08em; }
+  #tl { top: 36px; left: 44px; font-size: 13px; color: var(--accent); }
+  #tl b { color: var(--text); font-weight: 600; }
+  #tr { top: 36px; right: 44px; font-size: 13px; text-align: right; }
+  #tr .rec { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b;
+    margin-right: 8px; box-shadow: 0 0 10px #ff3b3b; vertical-align: 1px; }
+  #coords { color: var(--text-2); margin-top: 6px; font-size: 12px; }
+
+  #place { left: 44px; bottom: 92px; font-family: var(--sans); letter-spacing: 0; }
+  #place .day { font-family: var(--mono); font-size: 14px; color: var(--accent); letter-spacing: 0.2em; }
+  #place .name { font-size: 64px; font-weight: 800; line-height: 1.05; margin-top: 6px;
+    text-shadow: 0 4px 30px rgba(0,0,0,0.6); }
+  #place .name.moving { font-size: 44px; }
+  #place .region { font-size: 20px; font-weight: 300; color: var(--text-2); margin-top: 4px; }
+
+  #stats { right: 44px; bottom: 92px; text-align: right; }
+  #stats .k { font-size: 11px; color: var(--text-2); letter-spacing: 0.2em; }
+  #stats .v { font-family: var(--sans); font-size: 30px; font-weight: 700; letter-spacing: 0; margin-bottom: 12px; }
+  #stats .v small { font-size: 14px; font-weight: 500; color: var(--text-2); margin-left: 4px; }
+  #mode { display: inline-block; padding: 4px 10px; border: 1px solid var(--accent); color: var(--accent);
+    border-radius: 4px; font-size: 12px; background: var(--accent-dim); }
+
+  #bar { left: 44px; right: 44px; bottom: 44px; height: 26px; }
+  #bar .track { position: absolute; left: 0; right: 0; top: 12px; height: 2px; background: rgba(255,255,255,0.15); }
+  #bar .fill { position: absolute; left: 0; top: 12px; height: 2px; background: var(--accent);
+    box-shadow: 0 0 12px var(--accent); }
+  #bar .tick { position: absolute; top: 7px; width: 2px; height: 12px; background: rgba(255,255,255,0.35); }
+  #bar .tick.on { background: var(--accent); }
+  #bar .lbl { position: absolute; top: -8px; font-size: 10px; color: var(--text-2); }
+
+  #label { position: absolute; transform: translate(18px, -50%); font-family: var(--mono); font-size: 13px;
+    color: #fff; background: var(--glass); border-left: 2px solid var(--warm); padding: 4px 10px;
+    white-space: nowrap; backdrop-filter: blur(6px); }
+
+  .stoplabel { position: absolute; transform: translate(10px, -140%); font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.1em; color: #fff; text-shadow: 0 0 6px #000, 0 0 12px #000; white-space: nowrap; pointer-events: none;
+    transition: opacity 250ms; }
+  #card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; font-family: var(--sans); color: var(--text); text-align: center; pointer-events: none; }
+  #card .eyebrow { font-family: var(--mono); color: var(--accent); letter-spacing: 0.4em; font-size: 16px; }
+  #card .title { font-size: 96px; font-weight: 800; letter-spacing: -0.02em; margin: 12px 0;
+    text-shadow: 0 6px 40px rgba(0,0,0,0.7); }
+  #card .sub { font-size: 24px; font-weight: 300; color: var(--text-2); }
+  #card .row { display: flex; gap: 72px; margin-top: 36px; }
+  #card .row div { font-family: var(--mono); font-size: 13px; color: var(--text-2); letter-spacing: 0.2em; }
+  #card .row b { display: block; font-family: var(--sans); font-size: 54px; color: var(--text); letter-spacing: 0; }
+  /* 9:16 layout for Reels / Shorts */
+  @media (max-aspect-ratio: 1/1) {
+    #stats { top: 120px; bottom: auto; }
+    #place { bottom: 110px; right: 44px; }
+    #place .name { font-size: 72px; }
+    #place .name.moving { font-size: 46px; }
+    #card .title { font-size: 72px; padding: 0 40px; }
+    #card .row { flex-direction: column; gap: 28px; }
+  }
+  #fade { position: absolute; inset: 0; background: #000; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="vignette"></div>
+<div id="scan"></div>
+<div id="label"></div>
+
+<div class="hud" id="tl">TRAVEL LOG // <b id="tripTitle"></b></div>
+<div class="hud" id="tr"><span class="rec"></span><span id="date"></span><div id="coords"></div></div>
+<div class="hud" id="place"><div class="day" id="day"></div><div class="name" id="pname"></div><div class="region" id="pregion"></div></div>
+<div class="hud" id="stats">
+  <div class="k">DISTANCE</div><div class="v"><span id="km">0</span><small>km</small></div>
+  <div class="k">PLACES</div><div class="v"><span id="places">1</span><small id="placesOf"></small></div>
+  <span id="mode"></span>
+</div>
+<div class="hud" id="bar"><div class="track"></div><div class="fill" id="fill"></div></div>
+<div id="card"></div>
+<div id="fade"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Geometry helpers
+// ---------------------------------------------------------------------------
+const R = 6371;
+const rad = (d) => d * Math.PI / 180;
+const deg = (r) => r * 180 / Math.PI;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const smooth = (t) => t * t * (3 - 2 * t);
+
+function haversine(a, b) {
+  const dLat = rad(b[1] - a[1]), dLon = rad(b[0] - a[0]);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[1])) * Math.cos(rad(b[1])) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+// Great-circle interpolation, returns [lon, lat]
+function gc(a, b, t) {
+  const [l1, p1, l2, p2] = [rad(a[0]), rad(a[1]), rad(b[0]), rad(b[1])];
+  const d = haversine(a, b) / R;
+  if (d < 1e-9) return a.slice();
+  const A = Math.sin((1 - t) * d) / Math.sin(d), B = Math.sin(t * d) / Math.sin(d);
+  const x = A * Math.cos(p1) * Math.cos(l1) + B * Math.cos(p2) * Math.cos(l2);
+  const y = A * Math.cos(p1) * Math.sin(l1) + B * Math.cos(p2) * Math.sin(l2);
+  const z = A * Math.sin(p1) + B * Math.sin(p2);
+  return [deg(Math.atan2(y, x)), deg(Math.atan2(z, Math.sqrt(x * x + y * y)))];
+}
+
+// Road / train legs get a gentle sideways wobble so they read as ground travel;
+// flights get a clean great-circle arc.
+function legPoint(leg, t) {
+  const p = gc(leg.a, leg.b, t);
+  if (leg.mode === 'flight' || leg.km < 30) return p;
+  const amp = Math.min(leg.km * 0.035, 25) / 111 * Math.sin(Math.PI * t) * Math.sin(t * Math.PI * 3 + leg.seed);
+  const dx = leg.b[0] - leg.a[0], dy = leg.b[1] - leg.a[1], n = Math.hypot(dx, dy) || 1;
+  return [p[0] - dy / n * amp, p[1] + dx / n * amp];
+}
+
+// Zoom level at which `km` fills `frac` of the viewport width.
+function zoomFor(km, lat, widthPx, frac) {
+  const kmPerPxAtZ0 = 40075 * Math.cos(rad(lat)) / 512;
+  return Math.log2(kmPerPxAtZ0 * widthPx * frac / Math.max(km, 1));
+}
+
+const fmtDate = (d) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' }).toUpperCase();
+const DAY = 86400000;
+const MODE_LABEL = { flight: 'FLIGHT', road: 'ROAD', train: 'RAIL', boat: 'SEA', walk: 'ON FOOT' };
+
+// ---------------------------------------------------------------------------
+// Timeline
+// ---------------------------------------------------------------------------
+const T = { intro: 4.0, hold: 1.4, outro: 6.0 };
+let trip, legs, segs, total, map, W, MODE = 'tour';
+
+function build(data) {
+  trip = data;
+  const s = trip.stops;
+  const start = new Date(trip.start || s[0].arrive);
+  const end = new Date(trip.end || s[s.length - 1].arrive);
+  trip.days = Math.round((end - start) / DAY) + 1;
+  s.forEach((p) => { p.ll = [p.lon, p.lat]; p.day = Math.round((new Date(p.arrive) - start) / DAY) + 1; });
+  trip.startDate = start;
+
+  legs = [];
+  let cum = 0;
+  for (let i = 1; i < s.length; i++) {
+    const km = haversine(s[i - 1].ll, s[i].ll);
+    const mode = s[i].mode || (km > 700 ? 'flight' : 'road');
+    legs.push({ a: s[i - 1].ll, b: s[i].ll, km, mode, from: i - 1, to: i, cumStart: cum, seed: i * 1.7 });
+    cum += km;
+  }
+  trip.totalKm = cum;
+
+  // Stop zoom is chosen from the typical leg length so cities are readable.
+  const med = legs.map((l) => l.km).sort((a, b) => a - b)[Math.floor(legs.length / 2)] || 200;
+  trip.stopZoom = clamp(zoomFor(med, s[0].lat, W, 0.9) + 1.2, 6.5, 11);
+
+  segs = [];
+  let t = 0;
+  const push = (type, dur, extra) => { segs.push({ type, t0: t, t1: t + dur, ...extra }); t += dur; };
+  if (MODE === 'overview') {
+    // One wide 3D shot: the route draws across the whole country while the camera orbits.
+    push('ov-intro', 3.5);
+    push('ov-draw', clamp(6 + trip.totalKm / 500, 10, 22));
+    push('ov-hold', 5);
+    push('outro', T.outro);
+    total = t;
+    return total;
+  }
+  push('intro', T.intro);
+  push('hold', T.hold + 0.6, { stop: 0 });
+  legs.forEach((leg, i) => {
+    push('leg', clamp(1.8 + leg.km / 1100, 1.8, 4.2), { leg: i });
+    push('hold', T.hold, { stop: leg.to });
+  });
+  push('outro', T.outro);
+  total = t;
+  return total;
+}
+
+function routeUpTo(legIdx, frac) {
+  const coords = [];
+  for (let i = 0; i < legIdx; i++) for (let k = 0; k <= 64; k++) coords.push(legPoint(legs[i], k / 64));
+  if (legIdx < legs.length && frac > 0) {
+    const n = Math.max(2, Math.ceil(64 * frac));
+    for (let k = 0; k <= n; k++) coords.push(legPoint(legs[legIdx], (k / n) * frac));
+  }
+  return coords;
+}
+
+function fitAll() {
+  const s = trip.stops;
+  const lons = s.map((p) => p.lon), lats = s.map((p) => p.lat);
+  const c = [(Math.min(...lons) + Math.max(...lons)) / 2, (Math.min(...lats) + Math.max(...lats)) / 2];
+  const span = Math.max(...s.map((p) => haversine(c, p.ll))) * 2;
+  return { center: c, zoom: clamp(zoomFor(span, c[1], window.innerHeight, 0.62), 1.5, 12) };
+}
+
+// ---------------------------------------------------------------------------
+// Frame state
+// ---------------------------------------------------------------------------
+// Position along the whole route at constant ground speed, for the overview mode.
+function routeProgress(frac) {
+  const km = frac * trip.totalKm;
+  let i = legs.findIndex((l) => km <= l.cumStart + l.km);
+  if (i < 0) return { legIdx: legs.length, legFrac: 0, km: trip.totalKm };
+  return { legIdx: i, legFrac: legs[i].km ? (km - legs[i].cumStart) / legs[i].km : 1, km };
+}
+
+function overviewState(t, seg, u) {
+  const s = trip.stops, f = fitAll();
+  const ovZoom = f.zoom + 0.55;
+  const bearing = -28 + 70 * (t / total);
+  const st = { t, seg, u, bearing, center: f.center, zoom: ovZoom, pitch: 52, hud: 1, overview: true };
+  if (seg.type === 'ov-intro') {
+    const e = ease(u);
+    st.zoom = lerp(ovZoom - 1.6, ovZoom, e); st.pitch = lerp(15, 52, e);
+    Object.assign(st, routeProgress(0)); st.marker = s[0].ll; st.stop = 0;
+    st.card = u < 0.6 ? 'title' : null; st.cardAlpha = u < 0.45 ? 1 : clamp(1 - (u - 0.45) / 0.15, 0, 1);
+    st.fade = clamp(1 - u / 0.2, 0, 1); st.hud = clamp((u - 0.6) / 0.3, 0, 1);
+  } else if (seg.type === 'ov-draw') {
+    const e = smooth(u);
+    Object.assign(st, routeProgress(e));
+    if (st.legIdx < legs.length) {
+      const leg = legs[st.legIdx];
+      st.marker = legPoint(leg, st.legFrac); st.stop = st.legFrac < 0.5 ? leg.from : leg.to;
+      st.mode = leg.mode; st.moving = st.legFrac > 0.02 && st.legFrac < 0.98;
+    } else { st.marker = s[s.length - 1].ll; st.stop = s.length - 1; }
+  } else if (seg.type === 'ov-hold') {
+    Object.assign(st, routeProgress(1)); st.marker = s[s.length - 1].ll; st.stop = s.length - 1;
+    st.zoom = ovZoom + 0.15 * smooth(u);
+  } else {
+    const e = ease(u);
+    Object.assign(st, routeProgress(1)); st.marker = s[s.length - 1].ll; st.stop = s.length - 1;
+    st.zoom = lerp(ovZoom + 0.15, ovZoom - 1.2, e); st.pitch = lerp(52, 30, e);
+    st.hud = clamp(1 - u / 0.3, 0, 1);
+    st.card = u > 0.35 ? 'summary' : null; st.cardAlpha = clamp((u - 0.35) / 0.2, 0, 1);
+    st.fade = clamp((u - 0.9) / 0.1, 0, 1);
+  }
+  return st;
+}
+
+function stateAt(t) {
+  const seg = segs.find((g) => t < g.t1) || segs[segs.length - 1];
+  const u = clamp((t - seg.t0) / (seg.t1 - seg.t0), 0, 1);
+  if (MODE === 'overview') return overviewState(t, seg, u);
+  const s = trip.stops, Z = trip.stopZoom;
+  const drift = t * 3; // slow continuous bearing drift keeps the camera alive
+  const st = { t, seg, u, bearing: -10 + drift };
+
+  if (seg.type === 'intro') {
+    const e = ease(u);
+    const first = s[0].ll;
+    st.center = [lerp(first[0] - 70, first[0], e), lerp(10, first[1], e)];
+    st.zoom = lerp(1.3, Z, ease(clamp((u - 0.25) / 0.75, 0, 1)));
+    st.pitch = lerp(0, 45, e);
+    st.marker = first; st.stop = 0; st.legIdx = 0; st.legFrac = 0; st.km = 0;
+    st.card = u < 0.7 ? 'title' : null; st.cardAlpha = u < 0.55 ? 1 : clamp(1 - (u - 0.55) / 0.15, 0, 1);
+    st.fade = clamp(1 - u / 0.15, 0, 1);
+    st.hud = clamp((u - 0.7) / 0.3, 0, 1);
+  } else if (seg.type === 'hold') {
+    const p = s[seg.stop];
+    st.center = p.ll; st.zoom = Z + 0.25 * smooth(u); st.pitch = 45 + 5 * smooth(u);
+    st.marker = p.ll; st.stop = seg.stop; st.legIdx = seg.stop; st.legFrac = 0;
+    st.km = seg.stop ? legs[seg.stop - 1].cumStart + legs[seg.stop - 1].km : 0;
+    st.hud = 1;
+  } else if (seg.type === 'leg') {
+    const leg = legs[seg.leg], e = ease(u);
+    const mid = zoomFor(leg.km, (leg.a[1] + leg.b[1]) / 2, W, 0.55);
+    const low = Math.min(Z, mid);
+    const bump = Math.sin(Math.PI * e);
+    st.marker = legPoint(leg, e);
+    st.center = legPoint(leg, ease(clamp(u * 1.08 - 0.04, 0, 1)));
+    st.zoom = lerp(Z + 0.25, Z, e) - (Z - low) * Math.pow(bump, 0.9);
+    st.pitch = lerp(50, 45, e) - 25 * bump;
+    st.stop = e < 0.5 ? leg.from : leg.to; st.legIdx = seg.leg; st.legFrac = e;
+    st.km = leg.cumStart + leg.km * e; st.mode = leg.mode; st.moving = true;
+    st.hud = 1;
+  } else {
+    const e = ease(u), f = fitAll(), last = s[s.length - 1];
+    st.center = [lerp(last.lon, f.center[0], e), lerp(last.lat, f.center[1], e)];
+    st.zoom = lerp(Z + 0.25, f.zoom, e); st.pitch = lerp(50, 10, e);
+    st.marker = last.ll; st.stop = s.length - 1; st.legIdx = legs.length; st.legFrac = 0; st.km = trip.totalKm;
+    st.hud = clamp(1 - u / 0.3, 0, 1);
+    st.card = u > 0.35 ? 'summary' : null; st.cardAlpha = clamp((u - 0.35) / 0.2, 0, 1);
+    st.fade = clamp((u - 0.9) / 0.1, 0, 1);
+  }
+  return st;
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+// ---------------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+
+function buildBar() {
+  const bar = $('bar');
+  trip.stops.forEach((p, i) => {
+    const x = ((p.day - 1) / (trip.days - 1)) * 100;
+    const tk = document.createElement('div'); tk.className = 'tick'; tk.id = 'tk' + i; tk.style.left = x + '%';
+    bar.appendChild(tk);
+  });
+  [1, Math.round(trip.days / 2), trip.days].forEach((d) => {
+    const l = document.createElement('div'); l.className = 'lbl';
+    l.style.left = ((d - 1) / (trip.days - 1)) * 100 + '%'; l.style.transform = 'translateX(-50%)';
+    if (d === 1) l.style.transform = 'none';
+    if (d === trip.days) l.style.transform = 'translateX(-100%)';
+    l.textContent = 'DAY ' + d; bar.appendChild(l);
+  });
+}
+
+function dayAt(st) {
+  const s = trip.stops;
+  if (st.seg.type === 'leg') {
+    const leg = legs[st.legIdx];
+    return lerp(s[leg.from].day, s[leg.to].day, st.legFrac);
+  }
+  if (st.seg.type === 'outro') return trip.days;
+  const i = st.stop, next = s[i + 1] ? s[i + 1].day : trip.days;
+  // During a hold, time creeps forward a little so the counter never looks frozen.
+  return st.seg.type === 'hold' ? lerp(s[i].day, lerp(s[i].day, next, 0.25), st.u) : s[i].day;
+}
+
+function applyHud(st) {
+  const s = trip.stops, p = s[st.stop];
+  const day = Math.max(1, Math.floor(dayAt(st)));
+  document.querySelectorAll('.hud').forEach((el) => { el.style.opacity = st.hud; });
+  $('day').textContent = 'DAY ' + String(day).padStart(2, '0') + ' / ' + trip.days;
+  $('pname').textContent = st.overview && !st.moving && st.seg.type !== 'ov-draw' ? (trip.subtitle || trip.title) : st.moving ? s[legs[st.legIdx].from].name + '  →  ' + s[legs[st.legIdx].to].name : p.name;
+  $('pname').classList.toggle('moving', !!st.moving);
+  $('pregion').textContent = st.moving ? (legs[st.legIdx].km | 0).toLocaleString('en-US') + ' km leg' : (p.region || p.country || '');
+  $('date').textContent = fmtDate(new Date(trip.startDate.getTime() + (day - 1) * DAY));
+  $('coords').textContent = st.marker[1].toFixed(4) + '°N  ' + st.marker[0].toFixed(4) + '°E';
+  $('km').textContent = Math.round(st.km).toLocaleString('en-US');
+  const visited = st.seg.type === 'leg' ? (st.legFrac > 0.98 ? legs[st.legIdx].to + 1 : legs[st.legIdx].from + 1) : st.stop + 1;
+  $('places').textContent = visited; $('placesOf').textContent = '/ ' + s.length;
+  $('mode').textContent = st.moving ? MODE_LABEL[st.mode] || st.mode.toUpperCase() : 'ON GROUND';
+  $('fill').style.width = ((dayAt(st) - 1) / (trip.days - 1)) * 100 + '%';
+  s.forEach((q, i) => $('tk' + i).classList.toggle('on', i < visited));
+
+  if (st.overview) {
+    s.forEach((q, i) => {
+      let el = $('sl' + i);
+      if (!el) { el = document.createElement('div'); el.id = 'sl' + i; el.className = 'stoplabel'; el.textContent = q.name.toUpperCase(); document.body.appendChild(el); }
+      const pt = map.project(q.ll);
+      el.style.left = pt.x + 'px'; el.style.top = pt.y + 'px';
+      el.style.opacity = i < visited && st.seg.type !== 'outro' ? st.hud : 0;
+    });
+  }
+  const lbl = $('label');
+  if (!st.overview && !st.moving && st.hud > 0.5 && st.seg.type !== 'outro') {
+    const pt = map.project(st.marker);
+    lbl.style.display = 'block'; lbl.style.left = pt.x + 'px'; lbl.style.top = pt.y + 'px';
+    lbl.textContent = p.name.toUpperCase() + '  ·  ' + fmtDate(new Date(p.arrive));
+  } else lbl.style.display = 'none';
+
+  const card = $('card');
+  if (st.card === 'title') {
+    card.innerHTML = `<div class="eyebrow">TRAVEL LOG</div><div class="title">${trip.title}</div><div class="sub">${trip.subtitle || ''}</div>`;
+  } else if (st.card === 'summary') {
+    card.innerHTML = `<div class="eyebrow">${trip.days} DAYS</div><div class="title">${trip.title}</div>
+      <div class="row"><div><b>${Math.round(trip.totalKm).toLocaleString('en-US')}</b>KILOMETRES</div>
+      <div><b>${s.length}</b>PLACES</div><div><b>${legs.filter((l) => l.mode === 'flight').length}</b>FLIGHTS</div></div>`;
+  } else card.innerHTML = '';
+  card.style.opacity = st.cardAlpha ?? 0;
+  $('fade').style.opacity = st.fade ?? 0;
+}
+
+function applyMap(st) {
+  map.jumpTo({ center: st.center, zoom: st.zoom, pitch: st.pitch, bearing: st.bearing });
+  const route = routeUpTo(st.legIdx, st.legFrac);
+  map.getSource('route').setData({ type: 'Feature', geometry: { type: 'LineString', coordinates: route.length > 1 ? route : [st.marker, st.marker] } });
+  const visited = trip.stops.filter((_, i) => i <= (st.moving ? legs[st.legIdx].from : st.stop));
+  map.getSource('stops').setData({ type: 'FeatureCollection', features: visited.map((p) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: p.ll }, properties: {} })) });
+  const pulse = (st.t * 1.2) % 1;
+  map.getSource('head').setData({ type: 'Feature', geometry: { type: 'Point', coordinates: st.marker }, properties: {} });
+  map.setPaintProperty('head-ring', 'circle-radius', 8 + pulse * 26);
+  map.setPaintProperty('head-ring', 'circle-stroke-opacity', 0.9 * (1 - pulse));
+  const intro = st.seg.type === 'intro' ? st.u : 1;
+  map.setPaintProperty('labels', 'raster-opacity', st.overview ? 0 : 0.55 * clamp((intro - 0.6) / 0.4, 0, 1) * (st.moving ? 0.6 : 1));
+}
+
+function waitIdle(timeoutMs = 15000) {
+  return new Promise((resolve) => {
+    const to = setTimeout(resolve, timeoutMs);
+    map.once('idle', () => { clearTimeout(to); resolve(); });
+    map.triggerRepaint();
+  });
+}
+
+// Public API used by render.mjs
+window.renderFrame = async (t) => {
+  const st = stateAt(t);
+  applyMap(st);
+  await waitIdle();
+  applyHud(st);
+};
+
+window.setupReel = (data, options = {}) => new Promise((resolve) => {
+  W = window.innerWidth;
+  MODE = options.mode || 'tour';
+  const duration = build(data);
+  $('tripTitle').textContent = trip.title.toUpperCase();
+  buildBar();
+  const empty = { type: 'FeatureCollection', features: [] };
+  map = new maplibregl.Map({
+    container: 'map',
+    interactive: false,
+    fadeDuration: 0,
+    attributionControl: false,
+    preserveDrawingBuffer: true,
+    maxTileCacheSize: 4000,
+    style: {
+      version: 8,
+      // Globe when zoomed out, flat mercator up close: identical look, ~3x faster in software rendering.
+      projection: { type: ['interpolate', ['linear'], ['zoom'], 3, 'vertical-perspective', 5, 'mercator'] },
+      sky: { 'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 5, 1, 8, 0] },
+      sources: {
+        sat: { type: 'raster', tileSize: 256, maxzoom: 17,
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'] },
+        ref: { type: 'raster', tileSize: 256, maxzoom: 13,
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}'] },
+        dem: { type: 'raster-dem', tileSize: 256, encoding: 'terrarium', maxzoom: 12,
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'] },
+        route: { type: 'geojson', data: empty, lineMetrics: true },
+        stops: { type: 'geojson', data: empty },
+        head: { type: 'geojson', data: empty },
+      },
+      layers: [
+        { id: 'bg', type: 'background', paint: { 'background-color': '#000' } },
+        { id: 'sat', type: 'raster', source: 'sat',
+          paint: { 'raster-saturation': -0.15, 'raster-contrast': 0.12, 'raster-brightness-max': 0.82 } },
+        { id: 'hillshade', type: 'hillshade', source: 'dem', layout: { visibility: MODE === 'overview' ? 'visible' : 'none' },
+          paint: { 'hillshade-exaggeration': 0.35, 'hillshade-shadow-color': '#000', 'hillshade-highlight-color': '#ffffff', 'hillshade-accent-color': '#000' } },
+        { id: 'labels', type: 'raster', source: 'ref', paint: { 'raster-opacity': 0 } },
+        { id: 'route-glow', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-color': '#00d4ff', 'line-width': 14, 'line-blur': 10, 'line-opacity': 0.45 } },
+        { id: 'route', type: 'line', source: 'route', layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: { 'line-width': 3.5, 'line-gradient': ['interpolate', ['linear'], ['line-progress'], 0, '#00d4ff', 0.7, '#7ae7ff', 1, '#ffffff'] } },
+        { id: 'stops-halo', type: 'circle', source: 'stops',
+          paint: { 'circle-radius': 9, 'circle-color': '#ffb547', 'circle-opacity': 0.25, 'circle-blur': 0.6 } },
+        { id: 'stops', type: 'circle', source: 'stops',
+          paint: { 'circle-radius': 4.5, 'circle-color': '#ffb547', 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 } },
+        { id: 'head-ring', type: 'circle', source: 'head',
+          paint: { 'circle-radius': 10, 'circle-color': 'rgba(0,0,0,0)', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.8 } },
+        { id: 'head', type: 'circle', source: 'head',
+          paint: { 'circle-radius': 7, 'circle-color': '#ffffff', 'circle-stroke-color': '#00d4ff', 'circle-stroke-width': 3 } },
+      ],
+    },
+  });
+  map.on('load', async () => {
+    if (MODE === 'overview') {
+      // Real elevation, exaggerated so mountain ranges read at country scale.
+      map.setTerrain({ source: 'dem', exaggeration: 2.2 });
+      map.setSky({ 'sky-color': '#000000', 'fog-color': '#05060a', 'horizon-fog-blend': 0.92, 'fog-ground-blend': 0.55, 'atmosphere-blend': 0 });
+    }
+    await document.fonts.ready; resolve(duration);
+  });
+});
+</script>
+</body>
+</html>
